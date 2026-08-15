@@ -1,10 +1,20 @@
 package cliente
 
 import model.Cliente
+import model.ItemMenu
+import model.Pedido
+import model.Restaurante
+import model.StatusPedido
 import util.ClienteRepository
+import util.PedidoRepository
+import util.RestauranteRepository
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 
 fun main() {
-    val repository = ClienteRepository()
+    val clienteRepository = ClienteRepository()
+    val restauranteRepository = RestauranteRepository()
+    val pedidoRepository = PedidoRepository()
 
     while (true) {
         println()
@@ -13,8 +23,8 @@ fun main() {
         println("[0] Sair")
 
         when (lerEntrada("Escolha uma opção: ")) {
-            "1" -> entrar(repository)
-            "2" -> cadastrarNovo(repository)
+            "1" -> entrar(clienteRepository, restauranteRepository, pedidoRepository)
+            "2" -> cadastrarNovo(clienteRepository, restauranteRepository, pedidoRepository)
             "0", null -> {
                 println("Aplicativo encerrado.")
                 return
@@ -24,9 +34,13 @@ fun main() {
     }
 }
 
-private fun entrar(repository: ClienteRepository) {
+private fun entrar(
+    clienteRepository: ClienteRepository,
+    restauranteRepository: RestauranteRepository,
+    pedidoRepository: PedidoRepository
+) {
     val telefone = lerTelefone() ?: return
-    val cliente = repository.buscarPorTelefone(telefone)
+    val cliente = clienteRepository.buscarPorTelefone(telefone)
 
     if (cliente == null) {
         println("Cliente não encontrado.")
@@ -34,10 +48,14 @@ private fun entrar(repository: ClienteRepository) {
     }
 
     println("Bem-vindo, ${cliente.nome}!")
-    exibirMenuPrincipal(cliente)
+    exibirMenuPrincipal(cliente, restauranteRepository, pedidoRepository)
 }
 
-private fun cadastrarNovo(repository: ClienteRepository) {
+private fun cadastrarNovo(
+    clienteRepository: ClienteRepository,
+    restauranteRepository: RestauranteRepository,
+    pedidoRepository: PedidoRepository
+) {
     println()
     println("--- Novo Cadastro ---")
 
@@ -45,21 +63,25 @@ private fun cadastrarNovo(repository: ClienteRepository) {
     val telefone = lerTelefone() ?: return
     val endereco = lerCampoObrigatorio("Endereço: ") ?: return
 
-    if (repository.telefoneJaCadastrado(telefone)) {
+    if (clienteRepository.telefoneJaCadastrado(telefone)) {
         println("Já existe um cliente cadastrado com esse telefone.")
         return
     }
 
     val cliente = Cliente(nome, telefone, endereco)
-    if (repository.salvarNovo(cliente)) {
+    if (clienteRepository.salvarNovo(cliente)) {
         println("Cadastro realizado com sucesso.")
-        exibirMenuPrincipal(cliente)
+        exibirMenuPrincipal(cliente, restauranteRepository, pedidoRepository)
     } else {
         println("Não foi possível cadastrar: o telefone já está em uso.")
     }
 }
 
-private fun exibirMenuPrincipal(cliente: Cliente) {
+private fun exibirMenuPrincipal(
+    cliente: Cliente,
+    restauranteRepository: RestauranteRepository,
+    pedidoRepository: PedidoRepository
+) {
     while (true) {
         println()
         println("[1] Realizar Novo Pedido")
@@ -68,7 +90,7 @@ private fun exibirMenuPrincipal(cliente: Cliente) {
         println("[0] Sair")
 
         when (lerEntrada("Escolha uma opção: ")) {
-            "1" -> println("A realização de pedidos será adicionada na próxima etapa.")
+            "1" -> realizarNovoPedido(cliente, restauranteRepository, pedidoRepository)
             "2" -> println("A consulta de pedidos em andamento será adicionada na próxima etapa.")
             "3" -> println("A consulta de pedidos finalizados será adicionada na próxima etapa.")
             "0", null -> {
@@ -79,6 +101,153 @@ private fun exibirMenuPrincipal(cliente: Cliente) {
         }
     }
 }
+
+private fun realizarNovoPedido(
+    cliente: Cliente,
+    restauranteRepository: RestauranteRepository,
+    pedidoRepository: PedidoRepository
+) {
+    val restaurantes = restauranteRepository.listarTodos()
+    if (restaurantes.isEmpty()) {
+        println("Não há restaurantes cadastrados.")
+        return
+    }
+
+    println()
+    println("--- Restaurantes Disponíveis ---")
+    restaurantes.forEachIndexed { indice, restaurante ->
+        println("[${indice + 1}] ${restaurante.nome} - ${restaurante.endereco}")
+    }
+
+    val indiceRestaurante = lerIndiceRestaurante(restaurantes.size) ?: return
+    val restaurante = restaurantes[indiceRestaurante]
+
+    if (restaurante.menu.isEmpty()) {
+        println("O restaurante selecionado está com o cardápio vazio.")
+        return
+    }
+
+    exibirCardapio(restaurante)
+    val quantidades = selecionarItens(restaurante.menu)
+    if (quantidades.isEmpty()) {
+        println("Pedido cancelado: nenhum item foi selecionado.")
+        return
+    }
+
+    exibirResumo(restaurante.menu, quantidades)
+    if (!confirmarPedido()) {
+        println("Pedido cancelado.")
+        return
+    }
+
+    val idPedido = pedidoRepository.gerarProximoId()
+    val dataHora = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+    val pedidos = quantidades.map { (numeroItem, quantidade) ->
+        val item = restaurante.menu.first { it.numeroItem == numeroItem }
+        Pedido(
+            idPedido = idPedido,
+            dataHora = dataHora,
+            emailRestaurante = restaurante.email,
+            nomeRestaurante = restaurante.nome,
+            telefoneCliente = cliente.telefone,
+            nomeCliente = cliente.nome,
+            enderecoCliente = cliente.endereco,
+            numeroItem = item.numeroItem,
+            quantidade = quantidade,
+            descricaoItem = item.descricao,
+            valorUnitario = item.preco,
+            valorTotalItem = item.preco * quantidade,
+            status = StatusPedido.SOLICITADO.codigo
+        )
+    }
+
+    pedidoRepository.salvarNovo(pedidos)
+    println("Pedido $idPedido realizado com sucesso.")
+}
+
+private fun lerIndiceRestaurante(quantidadeRestaurantes: Int): Int? {
+    while (true) {
+        val entrada = lerEntrada("Selecione o restaurante: ") ?: return null
+        val numero = entrada.toIntOrNull()
+
+        if (numero != null && numero in 1..quantidadeRestaurantes) {
+            return numero - 1
+        }
+
+        println("Restaurante inválido. Escolha um número da lista.")
+    }
+}
+
+private fun exibirCardapio(restaurante: Restaurante) {
+    println()
+    println("--- Cardápio de ${restaurante.nome} ---")
+    restaurante.menu.forEach { item ->
+        println("Número: ${item.numeroItem} | ${item.descricao} | R$ ${formatarValor(item.preco)}")
+    }
+    println("Pressione Enter no número do item para finalizar a seleção.")
+}
+
+private fun selecionarItens(menu: List<ItemMenu>): LinkedHashMap<Int, Int> {
+    val quantidades = linkedMapOf<Int, Int>()
+
+    while (true) {
+        val numeroTexto = lerEntrada("numero_item: ")
+        if (numeroTexto.isNullOrBlank()) {
+            return quantidades
+        }
+
+        val numeroItem = numeroTexto.toIntOrNull()
+        val item = menu.firstOrNull { it.numeroItem == numeroItem }
+        if (item == null) {
+            println("Item não encontrado no cardápio.")
+            continue
+        }
+
+        val quantidade = lerQuantidade() ?: return quantidades
+        quantidades[item.numeroItem] = (quantidades[item.numeroItem] ?: 0) + quantidade
+        println("Item adicionado ao pedido.")
+    }
+}
+
+private fun lerQuantidade(): Int? {
+    while (true) {
+        val entrada = lerEntrada("Quantidade: ") ?: return null
+        val quantidade = entrada.toIntOrNull()
+
+        if (quantidade != null && quantidade > 0) {
+            return quantidade
+        }
+
+        println("Quantidade inválida. Informe um número inteiro positivo.")
+    }
+}
+
+private fun exibirResumo(menu: List<ItemMenu>, quantidades: Map<Int, Int>) {
+    var totalPedido = 0.0
+    println()
+    println("--- Resumo do Pedido ---")
+
+    quantidades.forEach { (numeroItem, quantidade) ->
+        val item = menu.first { it.numeroItem == numeroItem }
+        val totalItem = item.preco * quantidade
+        totalPedido += totalItem
+        println("${item.descricao} | $quantidade x R$ ${formatarValor(item.preco)} = R$ ${formatarValor(totalItem)}")
+    }
+
+    println("Total: R$ ${formatarValor(totalPedido)}")
+}
+
+private fun confirmarPedido(): Boolean {
+    while (true) {
+        when (lerEntrada("Confirmar pedido? [S/N]: ")?.uppercase()) {
+            "S" -> return true
+            "N", null -> return false
+            else -> println("Opção inválida. Digite S ou N.")
+        }
+    }
+}
+
+private fun formatarValor(valor: Double): String = "%.2f".format(valor)
 
 private fun lerTelefone(): String? {
     while (true) {
