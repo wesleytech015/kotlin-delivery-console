@@ -91,8 +91,8 @@ private fun exibirMenuPrincipal(
 
         when (lerEntrada("Escolha uma opção: ")) {
             "1" -> realizarNovoPedido(cliente, restauranteRepository, pedidoRepository)
-            "2" -> println("A consulta de pedidos em andamento será adicionada na próxima etapa.")
-            "3" -> println("A consulta de pedidos finalizados será adicionada na próxima etapa.")
+            "2" -> verPedidos(cliente, pedidoRepository, finalizados = false)
+            "3" -> verPedidos(cliente, pedidoRepository, finalizados = true)
             "0", null -> {
                 println("Sessão de ${cliente.nome} encerrada.")
                 return
@@ -163,6 +163,49 @@ private fun realizarNovoPedido(
 
     pedidoRepository.salvarNovo(pedidos)
     println("Pedido $idPedido realizado com sucesso.")
+}
+
+private fun verPedidos(
+    cliente: Cliente,
+    pedidoRepository: PedidoRepository,
+    finalizados: Boolean
+) {
+    val pedidos = pedidoRepository.filtrarPorTelefone(cliente.telefone).filter {
+        if (finalizados) {
+            it.status == StatusPedido.ENTREGUE.codigo
+        } else {
+            it.status in StatusPedido.SOLICITADO.codigo..StatusPedido.EM_TRANSITO.codigo
+        }
+    }
+
+    if (pedidos.isEmpty()) {
+        val tipo = if (finalizados) "finalizados" else "em andamento"
+        println("Não há pedidos $tipo.")
+        return
+    }
+
+    val titulo = if (finalizados) "Pedidos Finalizados" else "Pedidos em Andamento"
+    println()
+    println("--- $titulo ---")
+
+    pedidos.groupBy { it.idPedido }.forEach { (idPedido, itens) ->
+        val primeiro = itens.first()
+        println()
+        println("Pedido: $idPedido")
+        println("Data: ${primeiro.dataHora}")
+        println("Restaurante: ${primeiro.nomeRestaurante}")
+        println("Status: ${nomeStatus(primeiro.status)}")
+
+        var totalPedido = 0.0
+        itens.forEach { item ->
+            totalPedido += item.valorTotalItem
+            println(
+                "- ${item.descricaoItem} | ${item.quantidade} x R$ " +
+                    "${formatarValor(item.valorUnitario)} = R$ ${formatarValor(item.valorTotalItem)}"
+            )
+        }
+        println("Total: R$ ${formatarValor(totalPedido)}")
+    }
 }
 
 private fun lerIndiceRestaurante(quantidadeRestaurantes: Int): Int? {
@@ -248,6 +291,12 @@ private fun confirmarPedido(): Boolean {
 }
 
 private fun formatarValor(valor: Double): String = "%.2f".format(valor)
+
+private fun nomeStatus(codigo: Int): String =
+    StatusPedido.entries.firstOrNull { it.codigo == codigo }
+        ?.name
+        ?.replace('_', ' ')
+        ?: "DESCONHECIDO"
 
 private fun lerTelefone(): String? {
     while (true) {
