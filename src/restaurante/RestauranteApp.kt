@@ -92,7 +92,7 @@ private fun exibirMenuPrincipal(
         when (lerEntrada("Escolha uma opção: ")) {
             "1" -> gerenciarCardapio(restaurante, restauranteRepository)
             "2" -> visualizarPedidos(restaurante, pedidoRepository)
-            "3" -> println("A alteração de status será adicionada na etapa de pedidos.")
+            "3" -> alterarStatusPedido(restaurante, pedidoRepository)
             "0", null -> {
                 println("Sessão encerrada.")
                 return
@@ -141,6 +141,49 @@ private fun exibirPedido(idPedido: String, itens: List<Pedido>) {
         )
     }
     println("Total: R$ ${formatarValor(totalPedido)}")
+}
+
+private fun alterarStatusPedido(
+    restaurante: Restaurante,
+    pedidoRepository: PedidoRepository
+) {
+    val idPedido = lerEntrada("ID do pedido: ")
+    if (idPedido.isNullOrBlank()) {
+        println("ID do pedido inválido.")
+        return
+    }
+
+    val pedidosDoRestaurante = pedidoRepository.filtrarPorEmailRestaurante(restaurante.email)
+    val itensDoPedido = pedidosDoRestaurante.filter { it.idPedido == idPedido }
+    if (itensDoPedido.isEmpty()) {
+        println("Pedido não encontrado para este restaurante.")
+        return
+    }
+
+    println("Status atual: ${nomeStatus(itensDoPedido.first().status)}")
+    StatusPedido.entries.forEach { status ->
+        println("[${status.codigo}] ${status.name.replace('_', ' ')}")
+    }
+
+    val novoStatus = lerStatus() ?: return
+    if (pedidoRepository.atualizarStatus(idPedido, novoStatus)) {
+        println("Status do pedido atualizado com sucesso.")
+    } else {
+        println("Não foi possível atualizar o pedido.")
+    }
+}
+
+private fun lerStatus(): Int? {
+    while (true) {
+        val entrada = lerEntrada("Novo status: ") ?: return null
+        val status = entrada.toIntOrNull()
+
+        if (status != null && StatusPedido.entries.any { it.codigo == status }) {
+            return status
+        }
+
+        println("Status inválido. Informe um número de 0 a 4.")
+    }
 }
 
 private fun gerenciarCardapio(
