@@ -16,7 +16,7 @@ class RestauranteRepository(
     private val padraoNomeArquivo = Regex("restaurante_(\\d+)\\.json")
 
     fun listarTodos(): List<Restaurante> =
-        listarArquivos().map { lerRestaurante(it) }
+        listarArquivos().mapNotNull { lerRestaurante(it) }
 
     fun buscarPorEmail(email: String): Restaurante? =
         listarTodos().firstOrNull { emailsIguais(it.email, email) }
@@ -38,7 +38,7 @@ class RestauranteRepository(
 
     fun atualizar(restaurante: Restaurante): Boolean {
         val arquivo = listarArquivos().firstOrNull {
-            emailsIguais(lerRestaurante(it).email, restaurante.email)
+            lerRestaurante(it)?.let { salvo -> emailsIguais(salvo.email, restaurante.email) } == true
         } ?: return false
 
         escreverRestaurante(arquivo, restaurante)
@@ -68,10 +68,17 @@ class RestauranteRepository(
             ?.toInt()
             ?: error("Nome de arquivo de restaurante invalido: ${arquivo.fileName}")
 
-    private fun lerRestaurante(arquivo: Path): Restaurante =
-        Files.newBufferedReader(arquivo, StandardCharsets.UTF_8).use { leitor ->
-            gson.fromJson(leitor, Restaurante::class.java)
+    private fun lerRestaurante(arquivo: Path): Restaurante? {
+        if (Files.size(arquivo) == 0L) {
+            return null
         }
+
+        return runCatching {
+            Files.newBufferedReader(arquivo, StandardCharsets.UTF_8).use { leitor ->
+                gson.fromJson(leitor, Restaurante::class.java)
+            }
+        }.getOrNull()
+    }
 
     private fun escreverRestaurante(arquivo: Path, restaurante: Restaurante) {
         Files.newBufferedWriter(

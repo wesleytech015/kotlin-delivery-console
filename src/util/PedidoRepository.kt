@@ -37,6 +37,11 @@ class PedidoRepository(
             return
         }
 
+        require(pedidos.map { it.idPedido }.distinct().size == 1) {
+            "Todas as linhas de um novo pedido devem possuir o mesmo ID."
+        }
+        pedidos.forEach { validarPedido(it) }
+
         garantirArquivo()
         val linhas = pedidos.joinToString(System.lineSeparator()) { converterPedidoEmLinha(it) }
 
@@ -108,6 +113,21 @@ class PedidoRepository(
         pedido.status.toString()
     ).joinToString(";") { escaparCampo(it) }
 
+    private fun validarPedido(pedido: Pedido) {
+        require(pedido.idPedido.isNotBlank()) { "ID do pedido não pode ser vazio." }
+        require(pedido.numeroItem > 0) { "Número do item deve ser positivo." }
+        require(pedido.quantidade > 0) { "Quantidade deve ser positiva." }
+        require(pedido.valorUnitario > 0 && pedido.valorUnitario.isFinite()) {
+            "Valor unitário deve ser positivo."
+        }
+        require(pedido.valorTotalItem > 0 && pedido.valorTotalItem.isFinite()) {
+            "Valor total do item deve ser positivo."
+        }
+        require(StatusPedido.entries.any { it.codigo == pedido.status }) {
+            "Status deve estar entre 0 e 4."
+        }
+    }
+
     private fun converterLinhaEmPedido(linha: String): Pedido {
         val campos = separarCampos(linha)
         require(campos.size == 13) { "Linha inválida no arquivo de pedidos: $linha" }
@@ -130,10 +150,11 @@ class PedidoRepository(
     }
 
     private fun escaparCampo(valor: String): String {
-        if (';' !in valor && '"' !in valor && '\n' !in valor && '\r' !in valor) {
-            return valor
+        val normalizado = valor.replace('\r', ' ').replace('\n', ' ')
+        if (';' !in normalizado && '"' !in normalizado) {
+            return normalizado
         }
-        return "\"${valor.replace("\"", "\"\"")}\""
+        return "\"${normalizado.replace("\"", "\"\"")}\""
     }
 
     private fun separarCampos(linha: String): List<String> {
@@ -166,7 +187,7 @@ class PedidoRepository(
 
     private fun garantirArquivo() {
         garantirDiretorio()
-        if (Files.notExists(arquivo) || Files.size(arquivo) == 0L) {
+        if (Files.notExists(arquivo) || Files.readString(arquivo, StandardCharsets.UTF_8).isBlank()) {
             Files.writeString(arquivo, CABECALHO + System.lineSeparator(), StandardCharsets.UTF_8)
             return
         }

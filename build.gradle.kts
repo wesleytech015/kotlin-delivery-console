@@ -27,3 +27,19 @@ sourceSets {
 tasks.test {
     useJUnitPlatform()
 }
+
+tasks.register<JavaExec>("runRestaurante") {
+    group = "application"
+    description = "Executa o App Restaurante."
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("restaurante.RestauranteAppKt")
+    standardInput = System.`in`
+}
+
+tasks.register<JavaExec>("runCliente") {
+    group = "application"
+    description = "Executa o App Cliente."
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("cliente.ClienteAppKt")
+    standardInput = System.`in`
+}
