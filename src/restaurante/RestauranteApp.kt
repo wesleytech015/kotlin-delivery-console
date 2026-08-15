@@ -1,11 +1,15 @@
 package restaurante
 
 import model.ItemMenu
+import model.Pedido
 import model.Restaurante
+import model.StatusPedido
+import util.PedidoRepository
 import util.RestauranteRepository
 
 fun main() {
-    val repository = RestauranteRepository()
+    val restauranteRepository = RestauranteRepository()
+    val pedidoRepository = PedidoRepository()
 
     while (true) {
         println()
@@ -14,8 +18,8 @@ fun main() {
         println("[0] Sair")
 
         when (lerEntrada("Escolha uma opção: ")) {
-            "1" -> entrar(repository)
-            "2" -> cadastrarNovo(repository)
+            "1" -> entrar(restauranteRepository, pedidoRepository)
+            "2" -> cadastrarNovo(restauranteRepository, pedidoRepository)
             "0", null -> {
                 println("Aplicativo encerrado.")
                 return
@@ -25,7 +29,10 @@ fun main() {
     }
 }
 
-private fun entrar(repository: RestauranteRepository) {
+private fun entrar(
+    restauranteRepository: RestauranteRepository,
+    pedidoRepository: PedidoRepository
+) {
     val email = lerEntrada("E-mail: ")
 
     if (email.isNullOrBlank()) {
@@ -33,17 +40,20 @@ private fun entrar(repository: RestauranteRepository) {
         return
     }
 
-    val restaurante = repository.buscarPorEmail(email)
+    val restaurante = restauranteRepository.buscarPorEmail(email)
     if (restaurante == null) {
         println("Restaurante não cadastrado.")
         return
     }
 
     println("Bem-vindo, ${restaurante.nome}!")
-    exibirMenuPrincipal(restaurante, repository)
+    exibirMenuPrincipal(restaurante, restauranteRepository, pedidoRepository)
 }
 
-private fun cadastrarNovo(repository: RestauranteRepository) {
+private fun cadastrarNovo(
+    restauranteRepository: RestauranteRepository,
+    pedidoRepository: PedidoRepository
+) {
     println()
     println("--- Novo Cadastro ---")
 
@@ -51,7 +61,7 @@ private fun cadastrarNovo(repository: RestauranteRepository) {
     val email = lerCampoObrigatorio("E-mail: ") ?: return
     val endereco = lerCampoObrigatorio("Endereço: ") ?: return
 
-    if (repository.emailJaCadastrado(email)) {
+    if (restauranteRepository.emailJaCadastrado(email)) {
         println("Já existe um restaurante cadastrado com esse e-mail.")
         return
     }
@@ -59,9 +69,9 @@ private fun cadastrarNovo(repository: RestauranteRepository) {
     val menu = cadastrarCardapioInicial()
     val restaurante = Restaurante(nome, email, endereco, menu)
 
-    if (repository.salvarNovo(restaurante)) {
+    if (restauranteRepository.salvarNovo(restaurante)) {
         println("Cadastro realizado com sucesso.")
-        exibirMenuPrincipal(restaurante, repository)
+        exibirMenuPrincipal(restaurante, restauranteRepository, pedidoRepository)
     } else {
         println("Não foi possível cadastrar: o e-mail já está em uso.")
     }
@@ -69,7 +79,8 @@ private fun cadastrarNovo(repository: RestauranteRepository) {
 
 private fun exibirMenuPrincipal(
     restaurante: Restaurante,
-    repository: RestauranteRepository
+    restauranteRepository: RestauranteRepository,
+    pedidoRepository: PedidoRepository
 ) {
     while (true) {
         println()
@@ -79,8 +90,8 @@ private fun exibirMenuPrincipal(
         println("[0] Sair")
 
         when (lerEntrada("Escolha uma opção: ")) {
-            "1" -> gerenciarCardapio(restaurante, repository)
-            "2" -> println("A visualização de pedidos será adicionada na etapa de pedidos.")
+            "1" -> gerenciarCardapio(restaurante, restauranteRepository)
+            "2" -> visualizarPedidos(restaurante, pedidoRepository)
             "3" -> println("A alteração de status será adicionada na etapa de pedidos.")
             "0", null -> {
                 println("Sessão encerrada.")
@@ -89,6 +100,47 @@ private fun exibirMenuPrincipal(
             else -> println("Opção inválida.")
         }
     }
+}
+
+private fun visualizarPedidos(
+    restaurante: Restaurante,
+    pedidoRepository: PedidoRepository
+) {
+    val pedidos = pedidoRepository.filtrarPorEmailRestaurante(restaurante.email)
+    if (pedidos.isEmpty()) {
+        println("Não há pedidos para este restaurante.")
+        return
+    }
+
+    println()
+    println("--- Pedidos do Restaurante ---")
+
+    pedidos.groupBy { it.status }.toSortedMap().forEach { (status, pedidosDoStatus) ->
+        println()
+        println("Status: ${nomeStatus(status)}")
+        pedidosDoStatus.groupBy { it.idPedido }.forEach { (idPedido, itens) ->
+            exibirPedido(idPedido, itens)
+        }
+    }
+}
+
+private fun exibirPedido(idPedido: String, itens: List<Pedido>) {
+    val primeiro = itens.first()
+    println()
+    println("Pedido: $idPedido | Data: ${primeiro.dataHora}")
+    println("Cliente: ${primeiro.nomeCliente}")
+    println("Telefone: ${primeiro.telefoneCliente}")
+    println("Endereço: ${primeiro.enderecoCliente}")
+
+    var totalPedido = 0.0
+    itens.forEach { item ->
+        totalPedido += item.valorTotalItem
+        println(
+            "- ${item.descricaoItem} | ${item.quantidade} x R$ ${formatarValor(item.valorUnitario)} " +
+                "= R$ ${formatarValor(item.valorTotalItem)}"
+        )
+    }
+    println("Total: R$ ${formatarValor(totalPedido)}")
 }
 
 private fun gerenciarCardapio(
@@ -243,3 +295,11 @@ private fun lerEntrada(mensagem: String): String? {
     print(mensagem)
     return readlnOrNull()?.trim()
 }
+
+private fun formatarValor(valor: Double): String = "%.2f".format(valor)
+
+private fun nomeStatus(codigo: Int): String =
+    StatusPedido.entries.firstOrNull { it.codigo == codigo }
+        ?.name
+        ?.replace('_', ' ')
+        ?: "DESCONHECIDO"
